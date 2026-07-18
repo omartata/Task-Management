@@ -14,7 +14,7 @@
   --muted:#5c6b63; --bg:#f4f6f4; --card:#ffffff; --line:#e2e8e4;
   --text:#1b2620; --radius:12px; --green-soft:#e8f2ea;
   --shadow:0 1px 2px rgba(32,48,42,.06),0 8px 24px rgba(32,48,42,.06);
-  --new:#64748b; --prog:#C9A227; --review:#7c5cbf; --done:#1F5C38; --blocked:#E85200;
+  --new:#64748b; --prog:#C9A227; --review:#7c5cbf; --done:#1F5C38; --blocked:#E85200; --await:#0891b2;
 }
 [data-theme="dark"]{
   --green:#4f9d6f; --green-d:#3b7a53; --gold:#d9b84a; --orange:#ff6a1f;
@@ -322,6 +322,7 @@ tr.row:hover{background:var(--bg);cursor:pointer}
         <button id="tabKanban" class="active" onclick="setView('kanban')" data-i18n="kanban">لوحة</button>
         <button id="tabTable" onclick="setView('table')" data-i18n="table">جدول</button>
         <button id="tabGantt" onclick="setView('gantt')" data-i18n="gantt">زمني</button>
+        <button id="tabArchive" onclick="setView('archive')" data-i18n="archive">الأرشيف</button>
       </div>
     </div>
 
@@ -331,6 +332,7 @@ tr.row:hover{background:var(--bg);cursor:pointer}
       <tbody id="tbody"></tbody>
     </table></div></div>
     <div id="gantt" class="hidden"></div>
+    <div id="archive" class="hidden"></div>
   </div>
 </div>
 
@@ -345,7 +347,7 @@ const DEFAULT_CFG={
   key:'sb_publishable_LbxjgxwZrmMYAc_LDgCgIw_i3PsonCi'
 };
 let SB=null, cfg=JSON.parse(localStorage.getItem('sfc_task_cfg')||'null')||DEFAULT_CFG;
-let me=null, members=[], tasks=[], currentView='kanban';
+let me=null, members=[], tasks=[], archivedTasks=[], currentView='kanban', pendingFiles=[];
 let LANG=localStorage.getItem('sfc_lang')||'ar';
 
 /* ============ I18N DICTIONARY ============ */
@@ -404,6 +406,20 @@ const I18N={
   fileTypes:{ar:'PDF، صور، Word، Excel، فيديو',en:'PDF, images, Word, Excel, video'},
   noGantt:{ar:'لا توجد مهام لعرضها',en:'No tasks to display'},
   today:{ar:'اليوم',en:'Today'},
+  archive:{ar:'الأرشيف',en:'Archive'},
+  confirmDone:{ar:'تأكيد الإنجاز',en:'Confirm done'},
+  awaitingConfirm:{ar:'بانتظار التأكيد',en:'Awaiting confirmation'},
+  confirmedBadge:{ar:'مؤكدة',en:'Confirmed'},
+  archiveBtn:{ar:'أرشفة',en:'Archive'},
+  unarchive:{ar:'استرجاع',en:'Unarchive'},
+  archivedAt:{ar:'أُرشفت في',en:'Archived'},
+  confirmedAt:{ar:'أُكّدت في',en:'Confirmed'},
+  noArchived:{ar:'لا توجد مهام مؤرشفة',en:'No archived tasks'},
+  autoArchiveNote:{ar:'تُؤرشف تلقائياً بعد ٣٠ يوماً من التأكيد',en:'Auto-archives 30 days after confirmation'},
+  actConfirmed:{ar:'أكّد الإنجاز',en:'confirmed the task'},
+  actArchived:{ar:'أرشف المهمة',en:'archived the task'},
+  actRestored:{ar:'استرجع المهمة',en:'restored the task'},
+  confirmArchiveQ:{ar:'أرشفة هذه المهمة الآن؟',en:'Archive this task now?'},
   create:{ar:'إنشاء',en:'Create'},
   cancel:{ar:'إلغاء',en:'Cancel'},
   titleRequired:{ar:'العنوان مطلوب',en:'Title is required'},
@@ -438,6 +454,7 @@ const STATUSES=[
   {k:'in_progress',ar:'قيد التنفيذ',en:'In progress',c:'var(--prog)'},
   {k:'under_review',ar:'قيد المراجعة',en:'Under review',c:'var(--review)'},
   {k:'done',ar:'مكتملة',en:'Done',c:'var(--done)'},
+  {k:'awaiting_confirmation',ar:'بانتظار التأكيد',en:'Awaiting confirm',c:'var(--await)'},
   {k:'blocked',ar:'متوقفة',en:'Blocked',c:'var(--blocked)'},
 ];
 function stName(k){const s=STATUSES.find(x=>x.k===k);return s?s[LANG]:k;}
@@ -521,6 +538,7 @@ async function boot(){
   uRole.textContent=t('role'+me.role.charAt(0).toUpperCase()+me.role.slice(1));
   login.style.display='none'; app.style.display='block';
   if(me.role==='viewer'||me.role==='member'){newBtn.classList.add('hidden');}
+  await runAutoArchive();      // sweep tasks confirmed 30+ days ago into the archive
   await loadData(); render();
 }
 function showLogin(){
@@ -557,8 +575,8 @@ async function loadTasks(){
   tasks=tk||[];
 }
 async function loadData(){
-  // Boot-time load: both queries in parallel (one round-trip of waiting, not two).
-  await Promise.all([loadMembers(),loadTasks()]);
+  // Boot-time load: run in parallel (one round-trip of waiting, not three).
+  await Promise.all([loadMembers(),loadTasks(),loadArchived()]);
 }
 
 function memberName(id){const m=members.find(x=>x.id===id);return m?m.full_name:'—';}
@@ -569,9 +587,11 @@ function setView(v){currentView=v;
   tabKanban.classList.toggle('active',v==='kanban');
   tabTable.classList.toggle('active',v==='table');
   tabGantt.classList.toggle('active',v==='gantt');
+  tabArchive.classList.toggle('active',v==='archive');
   kanban.classList.toggle('hidden',v!=='kanban');
   table.classList.toggle('hidden',v!=='table');
   gantt.classList.toggle('hidden',v!=='gantt');
+  archive.classList.toggle('hidden',v!=='archive');
   render();
 }
 
@@ -595,6 +615,7 @@ function render(){
 
   if(currentView==='kanban') renderKanban(list);
   else if(currentView==='gantt') renderGantt(list);
+  else if(currentView==='archive') renderArchive();
   else renderTable(list);
 }
 
@@ -620,6 +641,11 @@ function cardEl(t){
   d.ondragstart=e=>e.dataTransfer.setData('id',t.id);
   d.onclick=()=>openDetail(t.id);
   const pr=PRI[t.priority]||PRI.med;
+  const awaitingLabel=(LANG==='ar')?'بانتظار التأكيد':'Awaiting confirm';
+  const confirmedLabel=(LANG==='ar')?'مؤكدة':'Confirmed';
+  let badge='';
+  if(t.status==='awaiting_confirmation') badge=`<span style="display:inline-block;background:var(--await);color:#fff;font-size:9px;font-weight:700;padding:1px 7px;border-radius:20px">⏳ ${awaitingLabel}</span>`;
+  else if(t.confirmed_at) badge=`<span style="display:inline-block;background:var(--done);color:#fff;font-size:9px;font-weight:700;padding:1px 7px;border-radius:20px">✓ ${confirmedLabel}</span>`;
   d.innerHTML=`<div class="t">${esc(t.title)}</div>
     <div class="meta">
       <span class="avatar">${initials(memberName(t.assignee))}</span>
@@ -627,6 +653,7 @@ function cardEl(t){
       <span class="pri ${pr.cls}">${pr[LANG]}</span>
       ${t.due_date?`<span>📅 ${t.due_date}</span>`:''}
     </div>
+    ${badge?`<div style="margin-top:6px">${badge}</div>`:''}
     <div class="prog-bar"><i style="width:${t.progress||0}%"></i></div>`;
   return d;
 }
@@ -708,6 +735,57 @@ function renderGantt(list){
     </div>
   </div>`;
 }
+
+/* ============ ARCHIVE VIEW ============ */
+function renderArchive(){
+  const list=archivedTasks.filter(x=>{
+    const a=fAssignee.value, p=fPriority.value;
+    return (!a||x.assignee===a)&&(!p||x.priority===p);
+  });
+  if(!list.length){
+    archive.innerHTML=`<div style="text-align:center;color:var(--muted);padding:40px;font-size:13px">${t('noArchived')}</div>`;
+    return;
+  }
+  const isAdmin=me.role==='admin';
+  const rows=list.map(x=>{
+    const pr=PRI[x.priority]||PRI.med;
+    return `<tr class="row">
+      <td onclick="openArchivedDetail('${x.id}')" style="cursor:pointer"><b>${esc(x.title)}</b></td>
+      <td>${esc(memberName(x.assignee))}</td>
+      <td><span class="pri ${pr.cls}">${pr[LANG]}</span></td>
+      <td>${x.confirmed_at?fmtDate(x.confirmed_at):'—'}</td>
+      <td>${x.archived_at?fmtDate(x.archived_at):'—'}</td>
+      <td>${isAdmin?`<button class="btn ghost sm" onclick="restoreTask('${x.id}')" style="width:auto">${t('unarchive')}</button>`:''}</td>
+    </tr>`;
+  }).join('');
+  archive.innerHTML=`<div class="table-wrap"><table>
+    <thead><tr>
+      <th data-i18n="task">${t('task')}</th>
+      <th data-i18n="assignee">${t('assignee')}</th>
+      <th data-i18n="priority">${t('priority')}</th>
+      <th>${t('confirmedAt')}</th>
+      <th>${t('archivedAt')}</th>
+      <th></th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+// read-only detail for an archived task
+function openArchivedDetail(id){
+  const tk=archivedTasks.find(x=>x.id===id); if(!tk)return;
+  const pr=PRI[tk.priority]||PRI.med;
+  const isAdmin=me.role==='admin';
+  modalHost.innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal">
+    <h3>${esc(tk.title)} <button class="close" onclick="closeModal()">×</button></h3>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">${esc(tk.description||t('noDesc'))}</p>
+    <div class="detail-row"><span class="k">${t('assignee')}</span><span>${esc(memberName(tk.assignee))}</span></div>
+    <div class="detail-row"><span class="k">${t('priority')}</span><span class="pri ${pr.cls}">${pr[LANG]}</span></div>
+    <div class="detail-row"><span class="k">${t('confirmedAt')}</span><span>${tk.confirmed_at?fmtDate(tk.confirmed_at):'—'}</span></div>
+    <div class="detail-row"><span class="k">${t('archivedAt')}</span><span>${tk.archived_at?fmtDate(tk.archived_at):'—'}</span></div>
+    ${isAdmin?`<div class="modal-actions"><button class="btn" onclick="restoreTask('${tk.id}')">${t('unarchive')}</button><button class="btn ghost" onclick="closeModal()">${t('cancel')}</button></div>`:''}
+  </div></div>`;
+}
+
 function openTaskModal(){
   const memOpts=members.filter(m=>m.role==='member'||m.role==='admin').map(m=>`<option value="${m.id}">${esc(m.full_name)}${m.skills?' · '+esc(m.skills):''}</option>`).join('');
   const today=new Date().toISOString().slice(0,10);
@@ -738,11 +816,39 @@ function openTaskModal(){
       </div>
     </div>
 
+    <div class="form-sec">
+      <div class="sec-h">${t('files')}</div>
+      <input type="file" id="mFileInput" style="display:none" multiple
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp,.mp4,.mov,.avi,.mkv,.webm,image/*,video/*"
+        onchange="stageFiles(this.files)">
+      <div class="drop-zone" onclick="mFileInput.click()"
+        ondragover="event.preventDefault();this.classList.add('drag-over')"
+        ondragleave="this.classList.remove('drag-over')"
+        ondrop="event.preventDefault();this.classList.remove('drag-over');stageFiles(event.dataTransfer.files)">
+        <div class="dz-icon">📎</div>
+        <div class="dz-main">${t('dropFiles')}</div>
+        <div class="dz-sub">${t('fileTypes')}</div>
+      </div>
+      <div id="pendingList" style="margin-top:8px"></div>
+    </div>
+
     <div class="modal-actions">
-      <button class="btn" onclick="createTask()">${t('create')}</button>
+      <button class="btn" id="createBtn" onclick="createTask()">${t('create')}</button>
       <button class="btn ghost" onclick="closeModal()">${t('cancel')}</button>
     </div>
   </div></div>`;
+  pendingFiles=[];   // reset staged files each time the modal opens
+}
+// stage files in memory (not uploaded until the task is created)
+function stageFiles(fileList_){
+  const files=[...(fileList_||[])];
+  pendingFiles=pendingFiles.concat(files);
+  renderPending();
+}
+function removePending(i){ pendingFiles.splice(i,1); renderPending(); }
+function renderPending(){
+  const el=document.getElementById('pendingList'); if(!el)return;
+  el.innerHTML=pendingFiles.map((f,i)=>`<div class="file-item">${fileIcon(f.name)} ${esc(f.name)}<span class="fsize">${fmtSize(f.size)}</span> <button class="close" onclick="removePending(${i})" style="margin-inline-start:auto;font-size:16px">×</button></div>`).join('');
 }
 function suggestMatch(){
   const skill=(mSkill.value||'').trim().toLowerCase();
@@ -754,13 +860,18 @@ function suggestMatch(){
 }
 async function createTask(){
   const title=mTitle.value.trim(); if(!title){alert(t('titleRequired'));return;}
+  const btn=document.getElementById('createBtn');
+  if(btn){btn.disabled=true;btn.style.opacity='.6';}
   const row={title,description:mDesc.value.trim(),assignee:mAssignee.value||null,
     priority:mPriority.value,status:'new',progress:0,
     start_date:mStart.value||null,due_date:mDue.value||null,
     required_skill:mSkill.value.trim()||null,created_by:me.id};
   const {data,error}=await SB.from('tasks').insert(row).select().single();
-  if(error){alert(error.message);return;}
+  if(error){alert(error.message);if(btn){btn.disabled=false;btn.style.opacity='';}return;}
   logAudit(data.id,t('actCreated'));           // fire-and-forget: don't block the UI
+  // upload any files staged in the form, now that the task has an ID
+  if(pendingFiles.length){ await uploadFiles(data.id,pendingFiles); }
+  pendingFiles=[];
   closeModal(); await loadTasks(); render();
 }
 
@@ -815,7 +926,12 @@ async function openDetail(id){
     <div style="margin-top:18px"><label style="font-size:13px;color:var(--muted)">${t('activityLog')}</label>
       <div id="logList" style="margin:8px 0"></div>
     </div>
-    ${me.role==='admin'?`<div class="modal-actions"><button class="btn ghost" onclick="deleteTask('${tk.id}')" style="color:var(--orange);border-color:var(--orange)">${t('deleteTask')}</button></div>`:''}
+    ${me.role==='admin'?`<div class="modal-actions" style="flex-wrap:wrap">
+      ${tk.status==='awaiting_confirmation'?`<button class="btn" onclick="confirmTask('${tk.id}')">✓ ${t('confirmDone')}</button>`:''}
+      ${tk.confirmed_at?`<button class="btn sec" onclick="archiveTask('${tk.id}')" style="width:auto">${t('archiveBtn')}</button>`:''}
+      <button class="btn ghost" onclick="deleteTask('${tk.id}')" style="color:var(--orange);border-color:var(--orange);width:auto">${t('deleteTask')}</button>
+    </div>
+    ${tk.confirmed_at?`<div style="font-size:11px;color:var(--muted);margin-top:8px;text-align:center">${t('confirmedBadge')} · ${fmtDate(tk.confirmed_at)} — ${t('autoArchiveNote')}</div>`:''}`:''}
   </div></div>`;
   loadFiles(tk.id); loadComments(tk.id); loadLog(tk.id);
 }
@@ -842,6 +958,41 @@ async function deleteTask(id){
   if(!confirm(t('confirmDelete')))return;
   await SB.from('tasks').delete().eq('id',id);
   closeModal(); await loadTasks(); render();
+}
+
+/* ---- confirmation gate + archive ---- */
+// Admin confirms a task is truly done. Stamps confirmed_at (starts the 30-day clock).
+async function confirmTask(id){
+  if(me.role!=='admin')return;
+  await SB.from('tasks').update({status:'done',confirmed_at:new Date().toISOString()}).eq('id',id);
+  logAudit(id,t('actConfirmed'));
+  closeModal(); await loadTasks(); render();
+}
+// Admin archives a confirmed task immediately (moves it to archived_tasks).
+async function archiveTask(id){
+  if(me.role!=='admin')return;
+  if(!confirm(t('confirmArchiveQ')))return;
+  const {error}=await SB.rpc('archive_task',{p_id:id});
+  if(error){alert(error.message);return;}
+  logAudit(id,t('actArchived'));
+  closeModal(); await loadTasks(); render();
+}
+// Admin restores an archived task back onto the board.
+async function restoreTask(id){
+  if(me.role!=='admin')return;
+  const {error}=await SB.rpc('restore_task',{p_id:id});
+  if(error){alert(error.message);return;}
+  closeModal(); await loadArchived(); await loadTasks(); render();
+}
+// On admin load: sweep anything confirmed 30+ days ago into the archive.
+async function runAutoArchive(){
+  if(me.role!=='admin')return;
+  try{ await SB.rpc('auto_archive_due'); }catch(e){ /* non-fatal */ }
+}
+// Load the archived tasks list (for the Archive view).
+async function loadArchived(){
+  const {data}=await SB.from('archived_tasks').select('*').order('archived_at',{ascending:false});
+  archivedTasks=data||[];
 }
 
 /* ---- files ---- */
@@ -876,7 +1027,7 @@ async function uploadFiles(taskId,fileList_){
     await SB.from('task_files').insert({task_id:taskId,name:file.name,url:publicUrl,size:file.size,uploaded_by:me.id});
     logAudit(taskId,`${t('actUploaded')} ${file.name}`);
   }
-  loadFiles(taskId);
+  if(document.getElementById('fileList')) loadFiles(taskId);
 }
 
 /* ---- comments ---- */
