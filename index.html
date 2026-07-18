@@ -117,7 +117,7 @@ header.top{background:var(--card);border-bottom:1px solid var(--line);padding:12
 
 .wrap{max-width:1200px;margin:0 auto;padding:22px}
 .toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
-.toolbar h2{font-size:20px;color:var(--text);margin-inline-end:auto}
+.toolbar h2{font-size:20px;color:var(--text)}
 .view-toggle{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .view-toggle button{background:var(--card);border:none;padding:8px 14px;font-size:13px;color:var(--muted);font-weight:600}
 .view-toggle button.active{background:var(--green);color:#fff}
@@ -166,6 +166,31 @@ tr.row:hover{background:var(--bg);cursor:pointer}
 .field select{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:var(--radius);background:var(--bg);color:var(--text)}
 .match{background:rgba(31,92,56,.08);border:1px solid rgba(31,92,56,.2);border-radius:10px;padding:8px 12px;font-size:12px;color:var(--green);margin-top:6px}
 .modal-actions{display:flex;gap:10px;margin-top:20px}
+/* form sections */
+.form-sec{border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.form-sec>.sec-h{font-size:12px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.form-sec>.sec-h::before{content:'';width:4px;height:14px;background:var(--gold);border-radius:2px}
+/* drag-drop upload zone */
+.drop-zone{border:2px dashed var(--line);border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:.15s;color:var(--muted)}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--green);background:rgba(31,92,56,.04);color:var(--green)}
+.drop-zone .dz-icon{font-size:26px;margin-bottom:4px}
+.drop-zone .dz-main{font-size:13px;font-weight:600}
+.drop-zone .dz-sub{font-size:11px;margin-top:3px;opacity:.8}
+.file-item .fsize{color:var(--muted);font-size:11px;margin-inline-start:6px}
+/* ---------- Gantt ---------- */
+#gantt{background:var(--card);border-radius:var(--radius);border:1px solid var(--line);overflow:auto;padding:0}
+.gantt-inner{min-width:640px}
+.gantt-head{display:grid;position:sticky;top:0;background:var(--bg);z-index:2;border-bottom:1px solid var(--line)}
+.gantt-head .gh-label{padding:8px 12px;font-size:12px;font-weight:700;color:var(--muted);border-inline-end:1px solid var(--line)}
+.gantt-head .gh-months{display:flex}
+.gantt-head .gh-month{flex:1;text-align:center;padding:8px 4px;font-size:11px;font-weight:600;color:var(--muted);border-inline-end:1px solid var(--line)}
+.gantt-row{display:grid;align-items:center;border-bottom:1px solid var(--line);min-height:40px}
+.gantt-row:hover{background:var(--bg)}
+.gantt-row .gr-label{padding:8px 12px;font-size:13px;font-weight:600;border-inline-end:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.gantt-track{position:relative;height:100%;min-height:40px}
+.gantt-bar{position:absolute;top:50%;transform:translateY(-50%);height:20px;border-radius:6px;cursor:pointer;display:flex;align-items:center;padding:0 8px;font-size:10px;color:#fff;font-weight:600;white-space:nowrap;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.gantt-today{position:absolute;top:0;bottom:0;width:2px;background:var(--orange);z-index:1}
+.gantt-today .gt-label{position:absolute;top:-2px;inset-inline-start:3px;font-size:9px;color:var(--orange);font-weight:700;white-space:nowrap}
 .skill-tag{display:inline-block;background:var(--bg);border:1px solid var(--line);border-radius:20px;padding:2px 10px;font-size:11px;margin:2px;color:var(--muted)}
 
 /* detail modal parts */
@@ -233,7 +258,7 @@ tr.row:hover{background:var(--bg);cursor:pointer}
 </div>
 
 <!-- LOGIN -->
-<div id="login">
+<div id="login" style="display:none">
   <div class="login-card">
     <div class="login-brand">
       <svg class="login-logo" width="60" height="60" viewBox="0 0 40 40">
@@ -285,6 +310,7 @@ tr.row:hover{background:var(--bg);cursor:pointer}
 
     <div class="toolbar">
       <h2 data-i18n="taskBoard">لوحة المهام</h2>
+      <button class="btn sm" id="newBtn" onclick="openTaskModal()" style="width:auto;margin-inline-end:auto" data-i18n="newTask">+ مهمة جديدة</button>
       <select class="filter" id="fAssignee" onchange="render()"><option value="" data-i18n="allPeople">كل الأشخاص</option></select>
       <select class="filter" id="fPriority" onchange="render()">
         <option value="" data-i18n="allPriorities">كل الأولويات</option>
@@ -295,8 +321,8 @@ tr.row:hover{background:var(--bg);cursor:pointer}
       <div class="view-toggle">
         <button id="tabKanban" class="active" onclick="setView('kanban')" data-i18n="kanban">لوحة</button>
         <button id="tabTable" onclick="setView('table')" data-i18n="table">جدول</button>
+        <button id="tabGantt" onclick="setView('gantt')" data-i18n="gantt">زمني</button>
       </div>
-      <button class="btn sm" id="newBtn" onclick="openTaskModal()" style="width:auto" data-i18n="newTask">+ مهمة جديدة</button>
     </div>
 
     <div id="kanban"></div>
@@ -304,6 +330,7 @@ tr.row:hover{background:var(--bg);cursor:pointer}
       <thead><tr><th data-i18n="task">المهمة</th><th data-i18n="assignee">المسؤول</th><th data-i18n="priority">الأولوية</th><th data-i18n="status">الحالة</th><th data-i18n="progress">التقدم</th><th data-i18n="due">الاستحقاق</th></tr></thead>
       <tbody id="tbody"></tbody>
     </table></div></div>
+    <div id="gantt" class="hidden"></div>
   </div>
 </div>
 
@@ -311,7 +338,13 @@ tr.row:hover{background:var(--bg);cursor:pointer}
 
 <script>
 /* ============ CONFIG ============ */
-let SB=null, cfg=JSON.parse(localStorage.getItem('sfc_task_cfg')||'null');
+/* Built-in project config so team members never see the setup screen.
+   This is the PUBLISHABLE key — safe for the browser; security is enforced by RLS. */
+const DEFAULT_CFG={
+  url:'https://ptbpyxkpjvbzaamyynmv.supabase.co',
+  key:'sb_publishable_LbxjgxwZrmMYAc_LDgCgIw_i3PsonCi'
+};
+let SB=null, cfg=JSON.parse(localStorage.getItem('sfc_task_cfg')||'null')||DEFAULT_CFG;
 let me=null, members=[], tasks=[], currentView='kanban';
 let LANG=localStorage.getItem('sfc_lang')||'ar';
 
@@ -362,6 +395,15 @@ const I18N={
   reqSkill:{ar:'المهارة المطلوبة',en:'Required skill'},
   skillPh:{ar:'مثال: تصميم، تحرير فيديو، تقارير',en:'e.g. design, video editing, reports'},
   dueDate:{ar:'تاريخ الاستحقاق',en:'Due date'},
+  startDate:{ar:'تاريخ البدء',en:'Start date'},
+  secDetails:{ar:'التفاصيل',en:'Details'},
+  secAssignment:{ar:'الإسناد',en:'Assignment'},
+  secTimeline:{ar:'الجدول الزمني',en:'Timeline'},
+  gantt:{ar:'زمني',en:'Gantt'},
+  dropFiles:{ar:'اسحب الملفات هنا أو اضغط للرفع',en:'Drag files here or click to upload'},
+  fileTypes:{ar:'PDF، صور، Word، Excel، فيديو',en:'PDF, images, Word, Excel, video'},
+  noGantt:{ar:'لا توجد مهام لعرضها',en:'No tasks to display'},
+  today:{ar:'اليوم',en:'Today'},
   create:{ar:'إنشاء',en:'Create'},
   cancel:{ar:'إلغاء',en:'Cancel'},
   titleRequired:{ar:'العنوان مطلوب',en:'Title is required'},
@@ -467,8 +509,11 @@ async function doLogin(){
 async function doLogout(){await SB.auth.signOut();location.reload();}
 
 async function boot(){
-  const {data:{user}}=await SB.auth.getUser();
-  if(!user){login.style.display='flex';app.style.display='none';return;}
+  // getSession() reads the locally-stored token instantly (no network round-trip),
+  // so we decide login-vs-app immediately instead of flashing the login screen.
+  const {data:{session}}=await SB.auth.getSession();
+  const user=session&&session.user;
+  if(!user){ showLogin(); return; }
   // load my profile
   const {data:prof}=await SB.from('profiles').select('*').eq('id',user.id).single();
   me={...user,...(prof||{})};
@@ -477,6 +522,10 @@ async function boot(){
   login.style.display='none'; app.style.display='block';
   if(me.role==='viewer'||me.role==='member'){newBtn.classList.add('hidden');}
   await loadData(); render();
+}
+function showLogin(){
+  app.style.display='none';
+  login.style.display='flex';
 }
 
 /* ============ DATA ============ */
@@ -519,8 +568,10 @@ function initials(name){return (name||'?').trim().split(/\s+/).slice(0,2).map(w=
 function setView(v){currentView=v;
   tabKanban.classList.toggle('active',v==='kanban');
   tabTable.classList.toggle('active',v==='table');
+  tabGantt.classList.toggle('active',v==='gantt');
   kanban.classList.toggle('hidden',v!=='kanban');
   table.classList.toggle('hidden',v!=='table');
+  gantt.classList.toggle('hidden',v!=='gantt');
   render();
 }
 
@@ -542,7 +593,9 @@ function render(){
   ];
   stats.forEach(s=>{const d=document.createElement('div');d.className='metric';d.innerHTML=`<div class="n">${s.n}</div><div class="l">${s.l}</div>`;metrics.appendChild(d);});
 
-  if(currentView==='kanban') renderKanban(list); else renderTable(list);
+  if(currentView==='kanban') renderKanban(list);
+  else if(currentView==='gantt') renderGantt(list);
+  else renderTable(list);
 }
 
 function renderKanban(list){
@@ -596,20 +649,95 @@ function renderTable(list){
   if(!list.length) tbody.innerHTML=`<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px">${emptyMsg}</td></tr>`;
 }
 
-/* ============ TASK MODAL (create) ============ */
+/* ============ GANTT ============ */
+function renderGantt(list){
+  // only tasks that have both a start and due date can be drawn as bars
+  const items=list.filter(x=>x.start_date&&x.due_date);
+  if(!items.length){
+    gantt.innerHTML=`<div style="text-align:center;color:var(--muted);padding:40px;font-size:13px">${t('noGantt')}</div>`;
+    return;
+  }
+  const dayMs=86400000;
+  // find the overall date range, padded a little on each side
+  let min=Infinity,max=-Infinity;
+  items.forEach(x=>{
+    const s=new Date(x.start_date).getTime(), d=new Date(x.due_date).getTime();
+    min=Math.min(min,s,d); max=Math.max(max,s,d);
+  });
+  const today=Date.now();
+  min=Math.min(min,today); max=Math.max(max,today);
+  min-=2*dayMs; max+=2*dayMs;
+  const span=Math.max(1,Math.round((max-min)/dayMs)); // total days
+  const pct=(ms)=>((ms-min)/(max-min))*100;
+
+  // month header segments
+  const months=[];
+  let cur=new Date(min); cur.setDate(1);
+  while(cur.getTime()<=max){
+    const mStart=Math.max(min,cur.getTime());
+    const next=new Date(cur.getFullYear(),cur.getMonth()+1,1).getTime();
+    const mEnd=Math.min(max,next);
+    const loc=(LANG==='ar')?'ar-SA':'en-GB';
+    months.push({label:new Date(cur).toLocaleDateString(loc,{month:'short',year:'2-digit'}),w:((mEnd-mStart)/(max-min))*100});
+    cur=new Date(next);
+  }
+  const labelCol='190px';
+  const rows=items.map(x=>{
+    const s=new Date(x.start_date).getTime(), d=new Date(x.due_date).getTime();
+    const left=pct(s), width=Math.max(1.5,pct(d)-pct(s));
+    const st=STATUSES.find(z=>z.k===x.status)||STATUSES[0];
+    return `<div class="gantt-row" style="grid-template-columns:${labelCol} 1fr">
+      <div class="gr-label" onclick="openDetail('${x.id}')" title="${esc(x.title)}">${esc(x.title)}</div>
+      <div class="gantt-track">
+        <div class="gantt-bar" style="inset-inline-start:${left}%;width:${width}%;background:${st.c}" onclick="openDetail('${x.id}')" title="${esc(memberName(x.assignee))} · ${x.progress||0}%">${x.progress||0}%</div>
+      </div>
+    </div>`;
+  }).join('');
+  const monthCells=months.map(m=>`<div class="gh-month" style="flex:0 0 ${m.w}%">${m.label}</div>`).join('');
+  const todayLeft=pct(today);
+  gantt.innerHTML=`<div class="gantt-inner">
+    <div class="gantt-head" style="grid-template-columns:${labelCol} 1fr">
+      <div class="gh-label">${t('task')}</div>
+      <div class="gh-months" style="position:relative">${monthCells}
+        <div class="gantt-today" style="inset-inline-start:${todayLeft}%"><span class="gt-label">${t('today')}</span></div>
+      </div>
+    </div>
+    <div style="position:relative">
+      ${rows}
+      <div class="gantt-today" style="inset-inline-start:calc(${labelCol} + (100% - ${labelCol}) * ${todayLeft/100})"></div>
+    </div>
+  </div>`;
+}
 function openTaskModal(){
   const memOpts=members.filter(m=>m.role==='member'||m.role==='admin').map(m=>`<option value="${m.id}">${esc(m.full_name)}${m.skills?' · '+esc(m.skills):''}</option>`).join('');
+  const today=new Date().toISOString().slice(0,10);
   modalHost.innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal">
     <h3>${t('newTaskTitle')} <button class="close" onclick="closeModal()">×</button></h3>
-    <div class="field"><label>${t('title')}</label><input id="mTitle"></div>
-    <div class="field"><label>${t('description')}</label><textarea id="mDesc"></textarea></div>
-    <div class="field"><label>${t('reqSkill')}</label><input id="mSkill" oninput="suggestMatch()" placeholder="${t('skillPh')}"></div>
-    <div id="matchBox"></div>
-    <div class="grid2">
-      <div class="field"><label>${t('assignee')}</label><select id="mAssignee">${memOpts}</select></div>
-      <div class="field"><label>${t('priority')}</label><select id="mPriority"><option value="high">${priName('high')}</option><option value="med" selected>${priName('med')}</option><option value="low">${priName('low')}</option></select></div>
+
+    <div class="form-sec">
+      <div class="sec-h">${t('secDetails')}</div>
+      <div class="field"><label>${t('title')}</label><input id="mTitle"></div>
+      <div class="field" style="margin-bottom:0"><label>${t('description')}</label><textarea id="mDesc"></textarea></div>
     </div>
-    <div class="field"><label>${t('dueDate')}</label><input id="mDue" type="date"></div>
+
+    <div class="form-sec">
+      <div class="sec-h">${t('secAssignment')}</div>
+      <div class="field"><label>${t('reqSkill')}</label><input id="mSkill" oninput="suggestMatch()" placeholder="${t('skillPh')}"></div>
+      <div id="matchBox"></div>
+      <div class="grid2" style="margin-bottom:0">
+        <div class="field" style="margin-bottom:0"><label>${t('assignee')}</label><select id="mAssignee">${memOpts}</select></div>
+        <div class="field" style="margin-bottom:0"><label>${t('priority')}</label><select id="mPriority"><option value="high">${priName('high')}</option><option value="med" selected>${priName('med')}</option><option value="low">${priName('low')}</option></select></div>
+      </div>
+    </div>
+
+    <div class="form-sec">
+      <div class="sec-h">${t('secTimeline')}</div>
+      <div class="grid2" style="margin-bottom:0">
+        <div class="field" style="margin-bottom:0"><label>${t('startDate')}</label><input id="mStart" type="date" value="${today}"></div>
+        <div class="field" style="margin-bottom:0"><label>${t('dueDate')}</label><input id="mDue" type="date"></div>
+      </div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn" onclick="createTask()">${t('create')}</button>
       <button class="btn ghost" onclick="closeModal()">${t('cancel')}</button>
@@ -627,7 +755,8 @@ function suggestMatch(){
 async function createTask(){
   const title=mTitle.value.trim(); if(!title){alert(t('titleRequired'));return;}
   const row={title,description:mDesc.value.trim(),assignee:mAssignee.value||null,
-    priority:mPriority.value,status:'new',progress:0,due_date:mDue.value||null,
+    priority:mPriority.value,status:'new',progress:0,
+    start_date:mStart.value||null,due_date:mDue.value||null,
     required_skill:mSkill.value.trim()||null,created_by:me.id};
   const {data,error}=await SB.from('tasks').insert(row).select().single();
   if(error){alert(error.message);return;}
@@ -661,7 +790,18 @@ async function openDetail(id){
 
     <div style="margin-top:16px"><label style="font-size:13px;color:var(--muted)">${t('files')}</label>
       <div id="fileList" style="margin:8px 0"></div>
-      ${canEdit?`<input type="file" id="fileInput" style="display:none" onchange="uploadFile('${tk.id}')"><button class="btn sec sm" onclick="fileInput.click()" style="width:auto">${t('upload')}</button>`:''}
+      ${canEdit?`
+      <input type="file" id="fileInput" style="display:none" multiple
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp,.mp4,.mov,.avi,.mkv,.webm,image/*,video/*"
+        onchange="uploadFiles('${tk.id}',this.files)">
+      <div class="drop-zone" id="dropZone" onclick="fileInput.click()"
+        ondragover="event.preventDefault();this.classList.add('drag-over')"
+        ondragleave="this.classList.remove('drag-over')"
+        ondrop="event.preventDefault();this.classList.remove('drag-over');uploadFiles('${tk.id}',event.dataTransfer.files)">
+        <div class="dz-icon">📎</div>
+        <div class="dz-main">${t('dropFiles')}</div>
+        <div class="dz-sub">${t('fileTypes')}</div>
+      </div>`:''}
     </div>
 
     <div style="margin-top:18px"><label style="font-size:13px;color:var(--muted)">${t('comments')}</label>
@@ -705,18 +845,37 @@ async function deleteTask(id){
 }
 
 /* ---- files ---- */
+function fileIcon(name){
+  const ext=(name.split('.').pop()||'').toLowerCase();
+  if(['pdf'].includes(ext))return'📕';
+  if(['doc','docx'].includes(ext))return'📘';
+  if(['xls','xlsx','csv'].includes(ext))return'📗';
+  if(['png','jpg','jpeg','gif','webp','svg','bmp'].includes(ext))return'🖼️';
+  if(['mp4','mov','avi','mkv','webm'].includes(ext))return'🎬';
+  if(['zip','rar','7z'].includes(ext))return'🗜️';
+  return'📄';
+}
+function fmtSize(bytes){
+  if(!bytes&&bytes!==0)return'';
+  if(bytes<1024)return bytes+' B';
+  if(bytes<1048576)return (bytes/1024).toFixed(0)+' KB';
+  return (bytes/1048576).toFixed(1)+' MB';
+}
 async function loadFiles(taskId){
   const {data}=await SB.from('task_files').select('*').eq('task_id',taskId).order('created_at');
-  fileList.innerHTML=(data||[]).map(f=>`<div class="file-item">📄 ${esc(f.name)} <a href="${f.url}" target="_blank">${t('download')}</a></div>`).join('')||`<span style="font-size:12px;color:var(--muted)">${t('noFiles')}</span>`;
+  fileList.innerHTML=(data||[]).map(f=>`<div class="file-item">${fileIcon(f.name)} ${esc(f.name)}${f.size?`<span class="fsize">${fmtSize(f.size)}</span>`:''} <a href="${f.url}" target="_blank">${t('download')}</a></div>`).join('')||`<span style="font-size:12px;color:var(--muted)">${t('noFiles')}</span>`;
 }
-async function uploadFile(taskId){
-  const file=fileInput.files[0]; if(!file)return;
-  const path=`${taskId}/${Date.now()}_${file.name}`;
-  const {error}=await SB.storage.from('task-files').upload(path,file);
-  if(error){alert(error.message);return;}
-  const {data:{publicUrl}}=SB.storage.from('task-files').getPublicUrl(path);
-  await SB.from('task_files').insert({task_id:taskId,name:file.name,url:publicUrl,uploaded_by:me.id});
-  logAudit(taskId,`${t('actUploaded')} ${file.name}`);
+async function uploadFiles(taskId,fileList_){
+  const files=[...(fileList_||[])]; if(!files.length)return;
+  for(const file of files){
+    const safe=file.name.replace(/[^\w.\-]/g,'_');
+    const path=`${taskId}/${Date.now()}_${safe}`;
+    const {error}=await SB.storage.from('task-files').upload(path,file);
+    if(error){alert(error.message);continue;}
+    const {data:{publicUrl}}=SB.storage.from('task-files').getPublicUrl(path);
+    await SB.from('task_files').insert({task_id:taskId,name:file.name,url:publicUrl,size:file.size,uploaded_by:me.id});
+    logAudit(taskId,`${t('actUploaded')} ${file.name}`);
+  }
   loadFiles(taskId);
 }
 
