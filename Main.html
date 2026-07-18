@@ -318,6 +318,9 @@ tr.row:hover{background:var(--bg);cursor:pointer}
         <option value="med" data-i18n="priMed">متوسطة</option>
         <option value="low" data-i18n="priLow">منخفضة</option>
       </select>
+      <label id="ackFilterWrap" class="filter" style="display:none;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="fUnack" onchange="render()" style="cursor:pointer"><span data-i18n="onlyUnack">غير المطّلع عليها فقط</span>
+      </label>
       <div class="view-toggle">
         <button id="tabKanban" class="active" onclick="setView('kanban')" data-i18n="kanban">لوحة</button>
         <button id="tabTable" onclick="setView('table')" data-i18n="table">جدول</button>
@@ -420,6 +423,21 @@ const I18N={
   actArchived:{ar:'أرشف المهمة',en:'archived the task'},
   actRestored:{ar:'استرجع المهمة',en:'restored the task'},
   confirmArchiveQ:{ar:'أرشفة هذه المهمة الآن؟',en:'Archive this task now?'},
+  origin:{ar:'مصدر المهمة',en:'Task origin'},
+  originCeo:{ar:'من الرئيس التنفيذي',en:'From CEO'},
+  originRecurring:{ar:'متكررة / موسمية',en:'Recurring / Seasonal'},
+  originSelf:{ar:'اكتشفتها بنفسي',en:'Self-identified'},
+  acknowledge:{ar:'تم الاطلاع',en:'Acknowledge'},
+  acknowledged:{ar:'تم الاطلاع عليها',en:'Acknowledged'},
+  needsAck:{ar:'بحاجة لاطلاعك',en:'Needs your review'},
+  onlyUnack:{ar:'غير المطّلع عليها فقط',en:'Unacknowledged only'},
+  cancelTask:{ar:'إلغاء المهمة',en:'Cancel task'},
+  cancelReason:{ar:'سبب الإلغاء (اختياري)',en:'Reason for cancelling (optional)'},
+  cancelled:{ar:'ملغاة',en:'Cancelled'},
+  confirmCancelQ:{ar:'إلغاء هذه المهمة؟ ستبقى في السجل.',en:'Cancel this task? It stays on the record.'},
+  actAcknowledged:{ar:'اطّلع على المهمة',en:'acknowledged the task'},
+  actCancelled:{ar:'ألغى المهمة',en:'cancelled the task'},
+  memberNewTaskHint:{ar:'ستُسند المهمة إليك تلقائياً',en:'This task will be assigned to you'},
   create:{ar:'إنشاء',en:'Create'},
   cancel:{ar:'إلغاء',en:'Cancel'},
   titleRequired:{ar:'العنوان مطلوب',en:'Title is required'},
@@ -456,6 +474,7 @@ const STATUSES=[
   {k:'done',ar:'مكتملة',en:'Done',c:'var(--done)'},
   {k:'awaiting_confirmation',ar:'بانتظار التأكيد',en:'Awaiting confirm',c:'var(--await)'},
   {k:'blocked',ar:'متوقفة',en:'Blocked',c:'var(--blocked)'},
+  {k:'cancelled',ar:'ملغاة',en:'Cancelled',c:'var(--muted)'},
 ];
 function stName(k){const s=STATUSES.find(x=>x.k===k);return s?s[LANG]:k;}
 const PRI={high:{ar:'عالية',en:'High',cls:'high'},med:{ar:'متوسطة',en:'Medium',cls:'med'},low:{ar:'منخفضة',en:'Low',cls:'low'}};
@@ -537,7 +556,8 @@ async function boot(){
   uName.textContent=me.full_name||user.email;
   uRole.textContent=t('role'+me.role.charAt(0).toUpperCase()+me.role.slice(1));
   login.style.display='none'; app.style.display='block';
-  if(me.role==='viewer'||me.role==='member'){newBtn.classList.add('hidden');}
+  if(me.role==='viewer'){newBtn.classList.add('hidden');}   // CEO is read-only; members CAN create
+  if(me.role==='admin'){const w=document.getElementById('ackFilterWrap');if(w)w.style.display='inline-flex';}
   await runAutoArchive();      // sweep tasks confirmed 30+ days ago into the archive
   await loadData(); render();
 }
@@ -597,7 +617,10 @@ function setView(v){currentView=v;
 
 function filtered(){
   const a=fAssignee.value, p=fPriority.value;
-  return tasks.filter(t=>(!a||t.assignee===a)&&(!p||t.priority===p));
+  const unackEl=document.getElementById('fUnack');
+  const onlyUnack=unackEl&&unackEl.checked;
+  return tasks.filter(t=>(!a||t.assignee===a)&&(!p||t.priority===p)
+    &&(!onlyUnack||(t.origin&&!t.acknowledged_at)));
 }
 
 function render(){
@@ -646,14 +669,25 @@ function cardEl(t){
   let badge='';
   if(t.status==='awaiting_confirmation') badge=`<span style="display:inline-block;background:var(--await);color:#fff;font-size:9px;font-weight:700;padding:1px 7px;border-radius:20px">⏳ ${awaitingLabel}</span>`;
   else if(t.confirmed_at) badge=`<span style="display:inline-block;background:var(--done);color:#fff;font-size:9px;font-weight:700;padding:1px 7px;border-radius:20px">✓ ${confirmedLabel}</span>`;
-  d.innerHTML=`<div class="t">${esc(t.title)}</div>
+  // origin tag for member-created tasks
+  const originMap={ceo:{icon:'📋',ar:'من الرئيس التنفيذي',en:'From CEO'},recurring:{icon:'🔁',ar:'متكررة',en:'Recurring'},self:{icon:'💡',ar:'ذاتية',en:'Self-found'}};
+  let originTag='';
+  if(t.origin&&originMap[t.origin]){
+    const o=originMap[t.origin];
+    originTag=`<span style="display:inline-block;background:var(--bg);border:1px solid var(--line);color:var(--muted);font-size:9px;font-weight:600;padding:1px 7px;border-radius:20px">${o.icon} ${o[LANG]}</span>`;
+  }
+  // unacknowledged dot — only the admin sees this, only on member-created tasks not yet acknowledged
+  const needsAck=(me.role==='admin'&&t.origin&&!t.acknowledged_at);
+  const ackDot=needsAck?`<span style="width:8px;height:8px;border-radius:50%;background:var(--orange);display:inline-block;margin-inline-start:4px" title="${t('needsAck')}"></span>`:'';
+  const tags=[badge,originTag].filter(Boolean).join(' ');
+  d.innerHTML=`<div class="t">${esc(t.title)}${ackDot}</div>
     <div class="meta">
       <span class="avatar">${initials(memberName(t.assignee))}</span>
       <span>${esc(memberName(t.assignee))}</span>
       <span class="pri ${pr.cls}">${pr[LANG]}</span>
       ${t.due_date?`<span>📅 ${t.due_date}</span>`:''}
     </div>
-    ${badge?`<div style="margin-top:6px">${badge}</div>`:''}
+    ${tags?`<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">${tags}</div>`:''}
     <div class="prog-bar"><i style="width:${t.progress||0}%"></i></div>`;
   return d;
 }
@@ -678,23 +712,30 @@ function renderTable(list){
 
 /* ============ GANTT ============ */
 function renderGantt(list){
-  // only tasks that have both a start and due date can be drawn as bars
-  const items=list.filter(x=>x.start_date&&x.due_date);
+  const dayMs=86400000;
+  // Build a drawable range for EVERY task, even if a date is missing.
+  // Fallbacks: missing start -> use due (or created); missing due -> start + 3 days.
+  const items=list.map(x=>{
+    let s=x.start_date?new Date(x.start_date).getTime():null;
+    let d=x.due_date?new Date(x.due_date).getTime():null;
+    const created=x.created_at?new Date(x.created_at).getTime():Date.now();
+    if(s===null&&d===null){ s=created; d=created+3*dayMs; }       // no dates at all
+    else if(s===null){ s=d; }                                     // only due -> single-day start=due
+    else if(d===null){ d=s+3*dayMs; }                             // only start -> 3-day default
+    if(d<s){ const tmp=s; s=d; d=tmp; }                           // guard against reversed dates
+    return {...x,_s:s,_d:d};
+  });
   if(!items.length){
     gantt.innerHTML=`<div style="text-align:center;color:var(--muted);padding:40px;font-size:13px">${t('noGantt')}</div>`;
     return;
   }
-  const dayMs=86400000;
-  // find the overall date range, padded a little on each side
+  // overall range, padded a little on each side
   let min=Infinity,max=-Infinity;
-  items.forEach(x=>{
-    const s=new Date(x.start_date).getTime(), d=new Date(x.due_date).getTime();
-    min=Math.min(min,s,d); max=Math.max(max,s,d);
-  });
+  items.forEach(x=>{ min=Math.min(min,x._s); max=Math.max(max,x._d); });
   const today=Date.now();
   min=Math.min(min,today); max=Math.max(max,today);
   min-=2*dayMs; max+=2*dayMs;
-  const span=Math.max(1,Math.round((max-min)/dayMs)); // total days
+  if(max-min<dayMs) max=min+dayMs; // avoid divide-by-zero on a single same-day task
   const pct=(ms)=>((ms-min)/(max-min))*100;
 
   // month header segments
@@ -710,11 +751,11 @@ function renderGantt(list){
   }
   const labelCol='190px';
   const rows=items.map(x=>{
-    const s=new Date(x.start_date).getTime(), d=new Date(x.due_date).getTime();
-    const left=pct(s), width=Math.max(1.5,pct(d)-pct(s));
+    const left=pct(x._s), width=Math.max(3,pct(x._d)-pct(x._s)); // min 3% so short/same-day bars stay visible
     const st=STATUSES.find(z=>z.k===x.status)||STATUSES[0];
+    const noDate=(!x.start_date||!x.due_date);
     return `<div class="gantt-row" style="grid-template-columns:${labelCol} 1fr">
-      <div class="gr-label" onclick="openDetail('${x.id}')" title="${esc(x.title)}">${esc(x.title)}</div>
+      <div class="gr-label" onclick="openDetail('${x.id}')" title="${esc(x.title)}">${esc(x.title)}${noDate?' <span style="color:var(--muted);font-size:10px">•</span>':''}</div>
       <div class="gantt-track">
         <div class="gantt-bar" style="inset-inline-start:${left}%;width:${width}%;background:${st.c}" onclick="openDetail('${x.id}')" title="${esc(memberName(x.assignee))} · ${x.progress||0}%">${x.progress||0}%</div>
       </div>
@@ -787,8 +828,25 @@ function openArchivedDetail(id){
 }
 
 function openTaskModal(){
+  const isAdmin=me.role==='admin';
   const memOpts=members.filter(m=>m.role==='member'||m.role==='admin').map(m=>`<option value="${m.id}">${esc(m.full_name)}${m.skills?' · '+esc(m.skills):''}</option>`).join('');
   const today=new Date().toISOString().slice(0,10);
+  // Admins: full assignment with skill-match + assignee picker.
+  // Members: self-assigned, must pick an origin so you know where it came from.
+  const assignmentBody=isAdmin?`
+      <div class="field"><label>${t('reqSkill')}</label><input id="mSkill" oninput="suggestMatch()" placeholder="${t('skillPh')}"></div>
+      <div id="matchBox"></div>
+      <div class="grid2" style="margin-bottom:0">
+        <div class="field" style="margin-bottom:0"><label>${t('assignee')}</label><select id="mAssignee">${memOpts}</select></div>
+        <div class="field" style="margin-bottom:0"><label>${t('priority')}</label><select id="mPriority"><option value="high">${priName('high')}</option><option value="med" selected>${priName('med')}</option><option value="low">${priName('low')}</option></select></div>
+      </div>`:`
+      <div class="field"><label>${t('origin')}</label><select id="mOrigin">
+        <option value="ceo">${t('originCeo')}</option>
+        <option value="recurring">${t('originRecurring')}</option>
+        <option value="self" selected>${t('originSelf')}</option>
+      </select></div>
+      <div class="field" style="margin-bottom:0"><label>${t('priority')}</label><select id="mPriority"><option value="high">${priName('high')}</option><option value="med" selected>${priName('med')}</option><option value="low">${priName('low')}</option></select></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">💡 ${t('memberNewTaskHint')}</div>`;
   modalHost.innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal">
     <h3>${t('newTaskTitle')} <button class="close" onclick="closeModal()">×</button></h3>
 
@@ -800,12 +858,7 @@ function openTaskModal(){
 
     <div class="form-sec">
       <div class="sec-h">${t('secAssignment')}</div>
-      <div class="field"><label>${t('reqSkill')}</label><input id="mSkill" oninput="suggestMatch()" placeholder="${t('skillPh')}"></div>
-      <div id="matchBox"></div>
-      <div class="grid2" style="margin-bottom:0">
-        <div class="field" style="margin-bottom:0"><label>${t('assignee')}</label><select id="mAssignee">${memOpts}</select></div>
-        <div class="field" style="margin-bottom:0"><label>${t('priority')}</label><select id="mPriority"><option value="high">${priName('high')}</option><option value="med" selected>${priName('med')}</option><option value="low">${priName('low')}</option></select></div>
-      </div>
+      ${assignmentBody}
     </div>
 
     <div class="form-sec">
@@ -862,10 +915,20 @@ async function createTask(){
   const title=mTitle.value.trim(); if(!title){alert(t('titleRequired'));return;}
   const btn=document.getElementById('createBtn');
   if(btn){btn.disabled=true;btn.style.opacity='.6';}
-  const row={title,description:mDesc.value.trim(),assignee:mAssignee.value||null,
+  const isAdmin=me.role==='admin';
+  const row={title,description:mDesc.value.trim(),
     priority:mPriority.value,status:'new',progress:0,
     start_date:mStart.value||null,due_date:mDue.value||null,
-    required_skill:mSkill.value.trim()||null,created_by:me.id};
+    created_by:me.id};
+  if(isAdmin){
+    // admin: assign to chosen person, record required skill, no origin tag
+    const el=document.getElementById('mAssignee'); row.assignee=el?el.value||null:null;
+    const sk=document.getElementById('mSkill'); row.required_skill=sk?sk.value.trim()||null:null;
+  }else{
+    // member: always self-assigned, must carry an origin so admin sees the source
+    row.assignee=me.id;
+    const or=document.getElementById('mOrigin'); row.origin=or?or.value:'self';
+  }
   const {data,error}=await SB.from('tasks').insert(row).select().single();
   if(error){alert(error.message);if(btn){btn.disabled=false;btn.style.opacity='';}return;}
   logAudit(data.id,t('actCreated'));           // fire-and-forget: don't block the UI
@@ -889,6 +952,8 @@ async function openDetail(id){
     <div class="detail-row"><span class="k">${t('priority')}</span><span class="pri ${pr.cls}">${pr[LANG]}</span></div>
     <div class="detail-row"><span class="k">${t('due')}</span><span>${tk.due_date||'—'}</span></div>
     ${tk.required_skill?`<div class="detail-row"><span class="k">${t('skill')}</span><span class="skill-tag">${esc(tk.required_skill)}</span></div>`:''}
+    ${tk.origin?`<div class="detail-row"><span class="k">${t('origin')}</span><span>${({ceo:t('originCeo'),recurring:t('originRecurring'),self:t('originSelf')})[tk.origin]||tk.origin}${tk.acknowledged_at?` · ✓ ${t('acknowledged')}`:` · <span style="color:var(--orange)">${t('needsAck')}</span>`}</span></div>`:''}
+    ${tk.status==='cancelled'&&tk.cancel_reason?`<div class="detail-row"><span class="k">${t('cancelReason')}</span><span>${esc(tk.cancel_reason)}</span></div>`:''}
 
     ${canEdit?`
     <div class="field" style="margin-top:14px"><label>${t('status')}</label><select id="dStatus" onchange="updateStatus('${tk.id}',this.value)">${statusOpts}</select></div>
@@ -927,11 +992,13 @@ async function openDetail(id){
       <div id="logList" style="margin:8px 0"></div>
     </div>
     ${me.role==='admin'?`<div class="modal-actions" style="flex-wrap:wrap">
+      ${(tk.origin&&!tk.acknowledged_at)?`<button class="btn" onclick="acknowledgeTask('${tk.id}')">✓ ${t('acknowledge')}</button>`:''}
       ${tk.status==='awaiting_confirmation'?`<button class="btn" onclick="confirmTask('${tk.id}')">✓ ${t('confirmDone')}</button>`:''}
       ${tk.confirmed_at?`<button class="btn sec" onclick="archiveTask('${tk.id}')" style="width:auto">${t('archiveBtn')}</button>`:''}
       <button class="btn ghost" onclick="deleteTask('${tk.id}')" style="color:var(--orange);border-color:var(--orange);width:auto">${t('deleteTask')}</button>
     </div>
     ${tk.confirmed_at?`<div style="font-size:11px;color:var(--muted);margin-top:8px;text-align:center">${t('confirmedBadge')} · ${fmtDate(tk.confirmed_at)} — ${t('autoArchiveNote')}</div>`:''}`:''}
+    ${(me.role==='member'&&tk.assignee===me.id&&tk.status!=='cancelled')?`<div class="modal-actions"><button class="btn ghost" onclick="cancelTask('${tk.id}')" style="color:var(--orange);border-color:var(--orange)">${t('cancelTask')}</button></div>`:''}
   </div></div>`;
   loadFiles(tk.id); loadComments(tk.id); loadLog(tk.id);
 }
@@ -968,6 +1035,23 @@ async function confirmTask(id){
   logAudit(id,t('actConfirmed'));
   closeModal(); await loadTasks(); render();
 }
+// Admin acknowledges a member-created task (clears the "needs review" marker).
+async function acknowledgeTask(id){
+  if(me.role!=='admin')return;
+  await SB.from('tasks').update({acknowledged_at:new Date().toISOString()}).eq('id',id);
+  logAudit(id,t('actAcknowledged'));
+  closeModal(); await loadTasks(); render();
+}
+// Member cancels their own task (stays on the record, not deleted).
+async function cancelTask(id){
+  const tk=tasks.find(x=>x.id===id); if(!tk)return;
+  if(!(me.role==='member'&&tk.assignee===me.id)&&me.role!=='admin')return;
+  if(!confirm(t('confirmCancelQ')))return;
+  const reason=prompt(t('cancelReason'))||null;
+  await SB.from('tasks').update({status:'cancelled',cancel_reason:reason}).eq('id',id);
+  logAudit(id,t('actCancelled'));
+  closeModal(); await loadTasks(); render();
+}
 // Admin archives a confirmed task immediately (moves it to archived_tasks).
 async function archiveTask(id){
   if(me.role!=='admin')return;
@@ -975,7 +1059,7 @@ async function archiveTask(id){
   const {error}=await SB.rpc('archive_task',{p_id:id});
   if(error){alert(error.message);return;}
   logAudit(id,t('actArchived'));
-  closeModal(); await loadTasks(); render();
+  closeModal(); await loadArchived(); await loadTasks(); render();
 }
 // Admin restores an archived task back onto the board.
 async function restoreTask(id){
