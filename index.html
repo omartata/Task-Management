@@ -8,6 +8,13 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// Fallback: if jsdelivr is blocked (some Edge/Opera setups, ad-blockers, corporate networks),
+// load the library from unpkg instead so the app still works.
+if(typeof supabase==='undefined'){
+  document.write('<script src="https://unpkg.com/@supabase/supabase-js@2"><\/script>');
+}
+</script>
 <style>
 :root{
   --green:#1F5C38; --green-d:#164227; --gold:#C9A227; --orange:#E85200;
@@ -246,6 +253,17 @@ tr.row:hover{background:var(--bg);cursor:pointer}
 <body data-theme="light">
 
 <!-- SETUP BANNER (shown until config filled) -->
+<div id="libError" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:200;align-items:center;justify-content:center;padding:24px;text-align:center">
+  <div style="max-width:420px">
+    <div style="font-size:40px;margin-bottom:12px">📡</div>
+    <h2 style="color:var(--green);margin-bottom:10px;font-size:20px">Connection blocked</h2>
+    <p style="color:var(--muted);font-size:14px;margin-bottom:8px">The app couldn't load a required library. This is usually caused by an ad-blocker, VPN, or strict browser privacy setting blocking the connection.</p>
+    <p style="color:var(--muted);font-size:14px;margin-bottom:16px">تعذّر تحميل مكوّن مطلوب. غالباً بسبب مانع إعلانات أو VPN أو إعدادات خصوصية في المتصفح.</p>
+    <p style="color:var(--text);font-size:13px">Try: disable ad-blocker/VPN for this site, or open it in Chrome. ثم حدّث الصفحة.</p>
+    <button onclick="location.reload()" style="margin-top:16px;background:var(--green);color:#fff;border:none;padding:11px 22px;border-radius:10px;font-weight:600;cursor:pointer">Refresh · تحديث</button>
+  </div>
+</div>
+
 <div id="setup" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:100;padding:40px 20px;overflow-y:auto">
   <div style="max-width:640px;margin:0 auto;background:var(--card);border-radius:16px;padding:30px">
     <h2 style="color:var(--green);margin-bottom:14px" data-i18n="quickSetup">إعداد سريع</h2>
@@ -531,35 +549,65 @@ function saveConfig(){
 
 function initSupabase(){
   if(!cfg){setup.style.display='block';return false;}
-  SB=supabase.createClient(cfg.url,cfg.key);
-  return true;
+  // If the Supabase library failed to load (blocked CDN, ad-blocker, offline),
+  // show a clear message instead of a blank/stuck screen.
+  if(typeof supabase==='undefined'||!supabase.createClient){
+    showLibError();
+    return false;
+  }
+  try{
+    SB=supabase.createClient(cfg.url,cfg.key);
+    return true;
+  }catch(err){
+    console.error('initSupabase failed:',err);
+    showLibError();
+    return false;
+  }
+}
+function showLibError(){
+  const box=document.getElementById('libError');
+  if(box) box.style.display='flex';
 }
 
 /* ============ AUTH ============ */
 async function doLogin(){
   loginErr.textContent='';
-  const {error}=await SB.auth.signInWithPassword({email:email.value.trim(),password:password.value});
-  if(error){loginErr.textContent=error.message;return;}
-  await boot();
+  try{
+    const {error}=await SB.auth.signInWithPassword({email:email.value.trim(),password:password.value});
+    if(error){loginErr.textContent=error.message;return;}
+    await boot();
+  }catch(err){
+    console.error('login failed:',err);
+    loginErr.textContent=(LANG==='ar')?'تعذّر تسجيل الدخول. تحقق من الإنترنت وحدّث الصفحة.':'Login failed. Check your internet and refresh.';
+  }
 }
 async function doLogout(){await SB.auth.signOut();location.reload();}
 
 async function boot(){
-  // getSession() reads the locally-stored token instantly (no network round-trip),
-  // so we decide login-vs-app immediately instead of flashing the login screen.
-  const {data:{session}}=await SB.auth.getSession();
-  const user=session&&session.user;
-  if(!user){ showLogin(); return; }
-  // load my profile
-  const {data:prof}=await SB.from('profiles').select('*').eq('id',user.id).single();
-  me={...user,...(prof||{})};
-  uName.textContent=me.full_name||user.email;
-  uRole.textContent=t('role'+me.role.charAt(0).toUpperCase()+me.role.slice(1));
-  login.style.display='none'; app.style.display='block';
-  if(me.role==='viewer'){newBtn.classList.add('hidden');}   // CEO is read-only; members CAN create
-  if(me.role==='admin'){const w=document.getElementById('ackFilterWrap');if(w)w.style.display='inline-flex';}
-  await runAutoArchive();      // sweep tasks confirmed 30+ days ago into the archive
-  await loadData(); render();
+  try{
+    // getSession() reads the locally-stored token instantly (no network round-trip),
+    // so we decide login-vs-app immediately instead of flashing the login screen.
+    const {data:{session}}=await SB.auth.getSession();
+    const user=session&&session.user;
+    if(!user){ showLogin(); return; }
+    // load my profile
+    const {data:prof,error:pErr}=await SB.from('profiles').select('*').eq('id',user.id).single();
+    if(pErr){ /* profile missing/blocked — still let them in with basic info */ }
+    me={...user,...(prof||{})};
+    if(!me.role) me.role='member';   // safe default if profile row is incomplete
+    uName.textContent=me.full_name||user.email;
+    uRole.textContent=t('role'+me.role.charAt(0).toUpperCase()+me.role.slice(1));
+    login.style.display='none'; app.style.display='block';
+    if(me.role==='viewer'){newBtn.classList.add('hidden');}   // CEO is read-only; members CAN create
+    if(me.role==='admin'){const w=document.getElementById('ackFilterWrap');if(w)w.style.display='inline-flex';}
+    await runAutoArchive();      // sweep tasks confirmed 30+ days ago into the archive
+    await loadData(); render();
+  }catch(err){
+    // Never leave the user stuck: fall back to the login screen and surface the reason.
+    console.error('boot failed:',err);
+    showLogin();
+    if(typeof loginErr!=='undefined'&&loginErr) loginErr.textContent=(LANG==='ar')?'تعذّر الاتصال. تحقق من الإنترنت وحدّث الصفحة.':'Could not connect. Check your internet and refresh.';
+  }
 }
 function showLogin(){
   app.style.display='none';
@@ -1142,10 +1190,16 @@ function toggleTheme(){const b=document.body;const th=b.dataset.theme==='dark'?'
 
 /* ============ START ============ */
 (function(){
-  const savedTheme=localStorage.getItem('sfc_theme'); if(savedTheme)document.body.dataset.theme=savedTheme;
-  applyLang();
-  if(initSupabase()){ boot(); }
-  ['email','password'].forEach(id=>document.getElementById(id).addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();}));
+  try{
+    const savedTheme=localStorage.getItem('sfc_theme'); if(savedTheme)document.body.dataset.theme=savedTheme;
+    applyLang();
+    if(initSupabase()){ boot(); }
+    ['email','password'].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});});
+  }catch(err){
+    console.error('startup failed:',err);
+    // last-resort: if the library is the problem, show the connection message
+    if(typeof supabase==='undefined') { var b=document.getElementById('libError'); if(b) b.style.display='flex'; }
+  }
 })();
 </script>
 </body>
